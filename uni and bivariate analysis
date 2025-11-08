@@ -1,0 +1,161 @@
+# ============================================================
+# 📦 STEP 1 — Install required libraries
+# ============================================================
+!pip install pandas numpy matplotlib seaborn fpdf openpyxl --quiet
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from fpdf import FPDF
+import os
+from google.colab import files
+from IPython.display import display
+
+# ============================================================
+# 📂 STEP 2 — Upload your dataset
+# ============================================================
+uploaded = files.upload()
+file_name = list(uploaded.keys())[0]
+print(f"✅ Uploaded file: {file_name}")
+
+if file_name.endswith(".csv"):
+    df = pd.read_csv(file_name)
+else:
+    df = pd.read_excel(file_name)
+
+# ============================================================
+# 🧹 STEP 3 — Basic cleaning
+# ============================================================
+df.columns = df.columns.str.strip().str.lower().str.replace(' ', '_').str.replace('-', '_')
+df = df.replace(['?', 'NA', 'N/A', 'nan', 'null', 'None', ''], np.nan)
+df = df.dropna(how='all')
+
+for col in df.columns:
+    df[col] = pd.to_numeric(df[col], errors='ignore')
+
+for col in df.columns:
+    if df[col].dtype == 'object' and df[col].nunique() <= 10:
+        df[col] = df[col].astype('category')
+
+print(f"✅ Cleaned data: {df.shape[0]} rows × {df.shape[1]} columns")
+
+# ============================================================
+# 🔍 STEP 4 — Descriptive stats
+# ============================================================
+display(df.describe(include='all').T)
+
+# ============================================================
+# 📊 STEP 5 — Univariate Analysis
+# ============================================================
+num_cols = df.select_dtypes(include=['int64','float64']).columns
+cat_cols = df.select_dtypes(include=['object','category']).columns
+plots_dir = "plots"
+os.makedirs(plots_dir, exist_ok=True)
+
+# Numeric histograms
+for col in num_cols:
+    plt.figure()
+    df[col].hist(bins=15, color='skyblue', edgecolor='black')
+    plt.title(f"Histogram — {col}")
+    plt.xlabel(col)
+    plt.ylabel('Count')
+    plt.savefig(f"{plots_dir}/hist_{col}.png", bbox_inches='tight')
+    plt.close()
+
+# Categorical bar charts
+for col in cat_cols:
+    plt.figure()
+    df[col].value_counts().plot(kind='bar', color='orange', edgecolor='black')
+    plt.title(f"Bar Chart — {col}")
+    plt.xlabel(col)
+    plt.ylabel('Count')
+    plt.savefig(f"{plots_dir}/bar_{col}.png", bbox_inches='tight')
+    plt.close()
+
+# ============================================================
+# 🔗 STEP 6 — Bivariate Analysis
+# ============================================================
+if len(num_cols) > 1:
+    plt.figure(figsize=(10,8))
+    sns.heatmap(df[num_cols].corr(), cmap='coolwarm', annot=False)
+    plt.title("Correlation Heatmap")
+    plt.savefig(f"{plots_dir}/correlation_heatmap.png", bbox_inches='tight')
+    plt.close()
+
+target_col = input("Enter target column name (press Enter to skip): ").strip().lower()
+if target_col in df.columns:
+    for col in num_cols:
+        if col != target_col:
+            plt.figure(figsize=(6,4))
+            sns.boxplot(x=target_col, y=col, data=df, palette='Set2')
+            plt.title(f"{col} vs {target_col}")
+            plt.savefig(f"{plots_dir}/box_{col}_vs_{target_col}.png", bbox_inches='tight')
+            plt.close()
+
+# ============================================================
+# 🧠 STEP 7 — Insights Summary
+# ============================================================
+summary_text = f"""
+DATASET SUMMARY
+---------------
+Rows: {df.shape[0]}
+Columns: {df.shape[1]}
+
+Numeric columns: {len(num_cols)}
+Categorical columns: {len(cat_cols)}
+
+KEY OBSERVATIONS:
+• Numeric features show varying ranges and skewness — check histograms.
+• Use the correlation heatmap to identify strong relationships.
+• Categorical imbalance may affect ML performance.
+"""
+
+with open("analysis_summary.txt", "w") as f:
+    f.write(summary_text)
+
+# ============================================================
+# 🧾 STEP 8 — Generate PDF Report
+# ============================================================
+pdf = FPDF()
+pdf.set_auto_page_break(auto=True, margin=15)
+
+pdf.add_page()
+pdf.set_font("Arial", "B", 16)
+pdf.cell(0, 10, "Data Analysis Report", ln=True, align="C")
+
+pdf.set_font("Arial", "", 12)
+pdf.multi_cell(0, 10, summary_text)
+
+# Add numeric plots
+pdf.set_font("Arial", "B", 14)
+pdf.cell(0, 10, "Univariate Analysis", ln=True)
+pdf.set_font("Arial", "", 12)
+for col in num_cols[:6]:
+    img_path = f"{plots_dir}/hist_{col}.png"
+    if os.path.exists(img_path):
+        pdf.add_page()
+        pdf.cell(0, 10, f"Histogram — {col}", ln=True)
+        pdf.image(img_path, x=15, y=30, w=180)
+        pdf.ln(100)
+
+# Add heatmap
+heatmap_path = f"{plots_dir}/correlation_heatmap.png"
+if os.path.exists(heatmap_path):
+    pdf.add_page()
+    pdf.cell(0, 10, "Correlation Heatmap", ln=True)
+    pdf.image(heatmap_path, x=15, y=30, w=180)
+
+pdf.output("Analysis_Report.pdf")
+print("✅ PDF report generated: Analysis_Report.pdf")
+
+# ============================================================
+# 💾 STEP 9 — Save cleaned dataset and download outputs
+# ============================================================
+df.to_csv("cleaned_dataset.csv", index=False)
+
+files.download("Analysis_Report.pdf")
+files.download("cleaned_dataset.csv")
+files.download("analysis_summary.txt")
+
+print("✅ All done — PDF report and cleaned data downloaded!")
