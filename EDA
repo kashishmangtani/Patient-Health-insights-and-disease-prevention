@@ -1,0 +1,95 @@
+# ---------- Starter Notebook (Colab-ready) ----------
+# If running in Colab: install missing packages (uncomment if needed)
+# !pip install -q xgboost imbalanced-learn shap
+
+# Imports
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from pathlib import Path
+from sklearn.model_selection import train_test_split, StratifiedKFold, RandomizedSearchCV, cross_validate
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.ensemble import RandomForestClassifier
+import xgboost as xgb
+from imblearn.over_sampling import SMOTE
+from imblearn.pipeline import Pipeline as ImbPipeline
+from sklearn.metrics import roc_auc_score, classification_report, confusion_matrix, precision_recall_fscore_support
+import joblib
+import shap
+import warnings
+warnings.filterwarnings("ignore")
+
+# ---------- 0. Preconditions ----------
+# Assumption: dataset is already loaded into `df` (pandas DataFrame).
+# If not, load e.g.: df = pd.read_csv('/path/to/file.csv')
+
+print("DataFrame loaded?:", 'df' in globals())
+if 'df' not in globals():
+    raise RuntimeError("Please load your dataset into a DataFrame named `df` before running this cell.")
+
+# ---------- 1. Detect/Set target column ----------
+# Try to auto-detect common target names; if multiple found, pick the first.
+possible_targets = ['target','label','disease','outcome','diagnosis','y','target_col','status']
+TARGET_COL = None
+for t in possible_targets:
+    if t in df.columns:
+        TARGET_COL = t
+        break
+
+# If still None, try to infer a binary column with 0/1 values
+if TARGET_COL is None:
+    for col in df.columns:
+        if df[col].dropna().isin([0,1]).all() and df[col].nunique() == 2:
+            TARGET_COL = col
+            break
+
+# If we couldn't detect, ask user to set manually (but we won't block)
+if TARGET_COL is None:
+    # set a placeholder and user can change
+    TARGET_COL = 'TARGET'   # <- edit this to your actual target column name
+    print("Could not auto-detect target column. Please set TARGET_COL variable to your target column name.")
+else:
+    print("Detected target column as:", TARGET_COL)
+
+# ---------- 2. Quick EDA ----------
+print("\nDataset shape:", df.shape)
+print("\nTarget distribution:")
+print(df[TARGET_COL].value_counts(dropna=False))
+print("\nMissing values (top 20):")
+print(df.isnull().sum().sort_values(ascending=False).head(20))
+
+# Plot a few basic charts (numeric distributions)
+numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+if TARGET_COL in numeric_cols: 
+    numeric_cols.remove(TARGET_COL)
+
+if len(numeric_cols) > 0:
+    sample_cols = numeric_cols[:6]
+    df[sample_cols].hist(figsize=(12,6))
+    plt.suptitle("Sample numeric distributions")
+    plt.show()
+
+# ---------- 3. Prepare features/columns ----------
+# drop obvious ID-like columns heuristically
+id_like = [c for c in df.columns if 'id' in c.lower() and c.lower()!=TARGET_COL.lower()]
+print("Dropping ID-like columns (if any):", id_like)
+df = df.drop(columns=id_like, errors='ignore')
+
+# auto-detect categorical columns
+CAT_COLS = df.select_dtypes(include=['object','category']).columns.tolist()
+CAT_COLS = [c for c in CAT_COLS if c != TARGET_COL]
+NUM_COLS = [c for c in df.columns if c not in CAT_COLS + [TARGET_COL]]
+
+print("Numeric cols:", len(NUM_COLS), "Categorical cols:", len(CAT_COLS))
+
+# ---------- 4. Train/test split ----------
+X = df.drop(columns=[TARGET_COL])
+y = df[TARGET_COL].astype(int)   # ensure i_]()
